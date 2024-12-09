@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="128px" height="128px" viewBox="0 0 128 128" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <g id="Avatar" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <circle id="Background" fill="#E2E8F0" cx="64" cy="64" r="64"></circle>
+        <g id="Person" transform="translate(32.000000, 32.000000)" fill="#94A3B8">
+            <circle id="Head" cx="32" cy="24" r="24"></circle>
+            <path d="M64,88 C64,68.117749 49.882251,52 30,52 C10.117749,52 -4,68.117749 -4,88 L64,88 Z" id="Body"></path>
+        </g>
+    </g>
+</svg>
