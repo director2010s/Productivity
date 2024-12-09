@@ -2,6 +2,7 @@ import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Task } from '../../../core/models/task.model';
+import { Timestamp } from 'firebase/firestore';
 
 @Component({
   selector: 'app-task-form',
@@ -51,6 +52,16 @@ import { Task } from '../../../core/models/task.model';
           <option value="medium">Medium</option>
           <option value="high">High</option>
         </select>
+      </div>
+
+      <div class="form-group">
+        <label for="tags">Tags</label>
+        <input
+          id="tags"
+          type="text"
+          formControlName="tags"
+          placeholder="Enter tags separated by commas"
+        >
       </div>
 
       <div class="form-actions">
@@ -131,9 +142,9 @@ import { Task } from '../../../core/models/task.model';
 })
 export class TaskFormComponent implements OnInit {
   @Input() task: Task | null = null;
-  @Output() taskCreated = new EventEmitter<Omit<Task, 'id' | 'createdAt' | 'updatedAt'>>();
+  @Output() close = new EventEmitter<void>();
+  @Output() taskAdded = new EventEmitter<Omit<Task, 'id' | 'createdAt' | 'updatedAt'>>();
   @Output() taskUpdated = new EventEmitter<Task>();
-  @Output() cancel = new EventEmitter<void>();
 
   taskForm: FormGroup;
 
@@ -143,7 +154,8 @@ export class TaskFormComponent implements OnInit {
       description: [''],
       dueDate: [null],
       priority: ['medium'],
-      completed: [false]
+      completed: [false],
+      tags: [[]]
     });
   }
 
@@ -154,35 +166,31 @@ export class TaskFormComponent implements OnInit {
         description: this.task.description,
         dueDate: this.task.dueDate ? this.formatDateForInput(this.task.dueDate) : null,
         priority: this.task.priority,
-        completed: this.task.completed
+        completed: this.task.completed,
+        tags: this.task.tags?.join(', ')
       });
     }
   }
 
-  private formatDateForInput(date: Date | string): string {
-    const d = new Date(date);
+  private formatDateForInput(date: Date | string | Timestamp): string {
+    const d = date instanceof Timestamp ? date.toDate() : new Date(date);
     return d.toISOString().split('T')[0];
   }
 
   onSubmit(): void {
-    if (this.taskForm.invalid) return;
-
-    const formValue = this.taskForm.value;
-    const taskData = {
-      title: formValue.title.trim(),
-      description: formValue.description?.trim() || '',
-      dueDate: formValue.dueDate ? new Date(formValue.dueDate + 'T00:00:00') : undefined,
-      priority: formValue.priority,
-      completed: formValue.completed
-    };
-
-    if (this.task) {
-      this.taskUpdated.emit({ ...this.task, ...taskData });
-    } else {
-      this.taskCreated.emit(taskData);
+    if (this.taskForm.valid) {
+      const taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> = {
+        title: this.taskForm.value.title,
+        description: this.taskForm.value.description,
+        dueDate: this.taskForm.value.dueDate,
+        priority: this.taskForm.value.priority,
+        completed: this.taskForm.value.completed,
+        archived: false,
+        tags: this.taskForm.value.tags?.split(',').map((tag: string) => tag.trim())
+      };
+      this.taskAdded.emit(taskData);
+      this.resetForm();
     }
-
-    this.resetForm();
   }
 
   private resetForm(): void {
@@ -191,7 +199,8 @@ export class TaskFormComponent implements OnInit {
       description: '',
       dueDate: null,
       priority: 'medium',
-      completed: false
+      completed: false,
+      tags: []
     });
     
     // Mark the form as pristine and untouched to reset validation states
@@ -200,6 +209,6 @@ export class TaskFormComponent implements OnInit {
   }
 
   onCancel(): void {
-    this.cancel.emit();
+    this.close.emit();
   }
 }

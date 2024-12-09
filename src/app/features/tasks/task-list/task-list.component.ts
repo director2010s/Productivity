@@ -7,6 +7,9 @@ import { TaskFormComponent } from '../task-form/task-form.component';
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
 import { firstValueFrom } from 'rxjs';
 import { take } from 'rxjs/operators';
+import { DateUtils } from '../../../core/utils/date.utils';
+import { Observable } from 'rxjs';
+import { Timestamp } from 'firebase/firestore';
 
 @Component({
   selector: 'app-task-list',
@@ -15,71 +18,81 @@ import { take } from 'rxjs/operators';
   template: `
     <div class="task-list-container">
       <div class="task-header">
-        <h2>Tasks</h2>
-        <button (click)="showAddTask = true" class="add-button">Add Task</button>
-      </div>
-
-      <app-task-form
-        *ngIf="showAddTask || editingTask"
-        [task]="editingTask"
-        (taskCreated)="onTaskCreated($event)"
-        (taskUpdated)="onTaskUpdated($event)"
-        (cancel)="cancelEdit()"
-      ></app-task-form>
-
-      <div class="task-filters">
-        <button 
-          *ngFor="let filter of filters"
-          (click)="setFilter(filter.value)"
-          [class.active]="currentFilter === filter.value"
-        >
-          {{ filter.label }}
+        <div class="header-content">
+          <h2>Today's Task</h2>
+          <p class="date">{{ today | date:'EEEE, dd MMM' }}</p>
+        </div>
+        <button (click)="showAddTask = true" class="new-task-btn">
+          <span>+</span> New Task
         </button>
       </div>
 
-      <div 
-        cdkDropList 
-        (cdkDropListDropped)="onDrop($event)"
-        class="task-items"
-      >
-        <div 
-          *ngFor="let task of filteredTasks$ | async"
-          class="task-item"
-          cdkDrag
-          [class.completed]="task.completed"
-          (click)="editTask(task)"
-        >
+      <div class="task-filters">
+        <button 
+          [class.active]="currentFilter === 'all'"
+          (click)="setFilter('all')"
+          class="filter-btn">
+          All <span class="count">{{ (tasks$ | async)?.length || 0 }}</span>
+        </button>
+        <button 
+          [class.active]="currentFilter === 'open'"
+          (click)="setFilter('open')"
+          class="filter-btn">
+          Open <span class="count">{{ getFilteredCount('open') }}</span>
+        </button>
+        <button 
+          [class.active]="currentFilter === 'closed'"
+          (click)="setFilter('closed')"
+          class="filter-btn">
+          Closed <span class="count">{{ getFilteredCount('closed') }}</span>
+        </button>
+        <button 
+          [class.active]="currentFilter === 'archived'"
+          (click)="setFilter('archived')"
+          class="filter-btn">
+          Archived <span class="count">{{ getFilteredCount('archived') }}</span>
+        </button>
+      </div>
+
+      <div class="tasks-wrapper" *ngIf="!showAddTask">
+        <div *ngFor="let task of filteredTasks$ | async" 
+             class="task-item"
+             [class.completed]="task.completed"
+             (click)="toggleTaskComplete(task)">
           <div class="task-content">
-            <input 
-              type="checkbox" 
-              [checked]="task.completed"
-              (change)="toggleTask(task)"
-              (click)="$event.stopPropagation()"
-            >
             <div class="task-info">
-              <div class="task-title">{{ task.title }}</div>
-              <div class="task-description" *ngIf="task.description">{{ task.description }}</div>
-              <div class="task-metadata">
-                <span class="due-date" *ngIf="task.dueDate">Due: {{ task.dueDate | date:'mediumDate' }}</span>
-                <span class="priority-badge" [class]="'priority-' + task.priority">
-                  {{ task.priority }}
-                </span>
-              </div>
+              <h3>{{ task.title }}</h3>
+              <p class="subtitle">{{ task.description }}</p>
+            </div>
+            <div class="task-time" *ngIf="task.dueDate">
+              Today {{ getDate(task.dueDate) | date:'h:mm a' }}
             </div>
           </div>
-          <button 
-            class="delete-button" 
-            (click)="$event.stopPropagation(); deleteTask(task.id)"
-          >
-            Delete
+          <div class="completion-indicator">
+            <div class="check-circle" [class.checked]="task.completed">
+              <svg *ngIf="task.completed" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+              </svg>
+            </div>
+          </div>
+          <button (click)="editTask(task)" class="edit-task-btn">
+            Edit
           </button>
         </div>
       </div>
+
+      <app-task-form 
+        *ngIf="showAddTask"
+        [task]="editingTask"
+        (close)="showAddTask = false; editingTask = null;"
+        (taskAdded)="onTaskAdded($event)"
+        (taskUpdated)="onTaskUpdated($event)">
+      </app-task-form>
     </div>
   `,
   styles: [`
     .task-list-container {
-      padding: 1rem;
+      padding: 24px;
       max-width: 800px;
       margin: 0 auto;
     }
@@ -88,128 +101,199 @@ import { take } from 'rxjs/operators';
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 1rem;
+      margin-bottom: 24px;
     }
 
-    .add-button {
-      background-color: #28a745;
+    .header-content h2 {
+      font-size: 24px;
+      font-weight: 600;
+      margin: 0;
+      color: #1a1a1a;
+    }
+
+    .date {
+      color: #666;
+      margin: 4px 0 0;
+      font-size: 14px;
+    }
+
+    .new-task-btn {
+      background: #4169E1;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: background-color 0.2s;
+    }
+
+    .new-task-btn:hover {
+      background: #3157cc;
     }
 
     .task-filters {
       display: flex;
-      gap: 0.5rem;
-      margin-bottom: 1rem;
+      gap: 16px;
+      margin-bottom: 24px;
     }
 
-    .task-filters button {
-      padding: 0.5rem 1rem;
+    .filter-btn {
+      background: none;
       border: none;
-      border-radius: 4px;
-      background-color: #f8f9fa;
+      padding: 8px 16px;
+      color: #666;
+      font-size: 14px;
       cursor: pointer;
+      position: relative;
+      transition: color 0.2s;
     }
 
-    .task-filters button.active {
-      background-color: #007bff;
-      color: white;
+    .filter-btn.active {
+      color: #4169E1;
+      font-weight: 500;
     }
 
-    .task-items {
+    .filter-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: -4px;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background: #4169E1;
+      border-radius: 2px;
+    }
+
+    .count {
+      background: #f0f0f0;
+      padding: 2px 8px;
+      border-radius: 12px;
+      margin-left: 8px;
+      font-size: 12px;
+    }
+
+    .tasks-wrapper {
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
+      gap: 16px;
     }
 
     .task-item {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      padding: 1rem;
-      background-color: white;
-      border-radius: 4px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      cursor: move;
+      justify-content: space-between;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      border: 1px solid #eee;
+    }
+
+    .task-item:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
     }
 
     .task-content {
+      flex: 1;
+      margin-right: 16px;
+    }
+
+    .task-info h3 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 500;
+      color: #1a1a1a;
+    }
+
+    .subtitle {
+      margin: 4px 0 0;
+      font-size: 14px;
+      color: #666;
+    }
+
+    .task-time {
+      font-size: 12px;
+      color: #666;
+      margin-top: 8px;
+    }
+
+    .completion-indicator {
+      flex-shrink: 0;
+    }
+
+    .check-circle {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 2px solid #ddd;
       display: flex;
       align-items: center;
-      gap: 1rem;
-      flex: 1;
+      justify-content: center;
+      transition: all 0.2s;
     }
 
-    .task-info {
-      display: flex;
-      flex-direction: column;
-      gap: 0.25rem;
+    .check-circle.checked {
+      background: #4169E1;
+      border-color: #4169E1;
     }
 
-    .task-description {
-      font-size: 0.9rem;
-      color: #6c757d;
+    .check-circle svg {
+      width: 16px;
+      height: 16px;
+      fill: white;
     }
 
-    .task-metadata {
-      display: flex;
-      gap: 1rem;
-      font-size: 0.8rem;
-      color: #6c757d;
+    .task-item.completed .task-info h3 {
+      color: #999;
+      text-decoration: line-through;
     }
 
-    .priority-badge {
-      padding: 0.25rem 0.5rem;
-      border-radius: 4px;
-      font-size: 0.8rem;
-      text-transform: capitalize;
+    .task-item.completed .subtitle {
+      color: #999;
     }
 
-    .priority-high {
-      background-color: #dc3545;
-      color: white;
-    }
-
-    .priority-medium {
-      background-color: #ffc107;
-      color: black;
-    }
-
-    .priority-low {
-      background-color: #28a745;
-      color: white;
-    }
-
-    .delete-button {
-      background-color: #dc3545;
-    }
-
-    .cdk-drag-preview {
-      box-shadow: 0 5px 5px -3px rgba(0,0,0,0.2),
-                  0 8px 10px 1px rgba(0,0,0,0.14),
-                  0 3px 14px 2px rgba(0,0,0,0.12);
-    }
-
-    .cdk-drag-placeholder {
-      opacity: 0;
-    }
-
-    .cdk-drag-animating {
-      transition: transform 250ms cubic-bezier(0, 0, 0.2, 1);
+    .edit-task-btn {
+      background: none;
+      border: none;
+      padding: 8px 16px;
+      color: #666;
+      font-size: 14px;
+      cursor: pointer;
+      position: relative;
+      transition: color 0.2s;
     }
   `]
 })
 export class TaskListComponent implements OnInit {
+  today: string = '2024-12-10T04:30:50+09:00';
   showAddTask = false;
   editingTask: Task | null = null;
-  currentFilter: 'all' | 'active' | 'completed' = 'all';
-  filteredTasks$ = this.taskService.getTasksByFilter(this.currentFilter);
+  currentFilter: 'all' | 'open' | 'closed' | 'archived' = 'all';
+  tasks$: Observable<Task[]> = this.taskService.getTasksByFilter(this.currentFilter);
+  filteredTasks$ = this.tasks$;
+  dateUtils = DateUtils;
+  taskCounts: { [key: string]: number } = {
+    open: 0,
+    closed: 0,
+    archived: 0
+  };
 
-  filters = [
-    { label: 'All', value: 'all' as const },
-    { label: 'Active', value: 'active' as const },
-    { label: 'Completed', value: 'completed' as const }
-  ];
-
-  constructor(private taskService: TaskService) {}
+  constructor(private taskService: TaskService) {
+    // Initialize counts for each filter
+    ['open', 'closed', 'archived'].forEach(filter => {
+      this.taskService.getTasksByFilter(filter as 'open' | 'closed' | 'archived')
+        .subscribe(tasks => {
+          this.taskCounts[filter] = tasks.length;
+        });
+    });
+  }
 
   ngOnInit(): void {
     this.setFilter(this.currentFilter);
@@ -217,47 +301,48 @@ export class TaskListComponent implements OnInit {
 
   setFilter(filter: typeof this.currentFilter): void {
     this.currentFilter = filter;
-    this.filteredTasks$ = this.taskService.getTasksByFilter(filter);
+    this.tasks$ = this.taskService.getTasksByFilter(filter);
+    this.filteredTasks$ = this.tasks$;
   }
 
-  onTaskCreated(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): void {
-    this.taskService.addTask(task);
+  onTaskAdded(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): void {
+    const taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> = {
+      title: task.title,
+      archived: false,
+      completed: false,
+      priority: task.priority,
+      dueDate: task.dueDate,
+      description: task.description,
+      tags: task.tags
+    };
+    this.taskService.addTask(taskData);
     this.showAddTask = false;
   }
 
   onTaskUpdated(task: Task): void {
     this.taskService.updateTask(task.id, task);
+    this.showAddTask = false;
     this.editingTask = null;
   }
 
-  toggleTask(task: Task): void {
+  toggleTaskComplete(task: Task): void {
     this.taskService.updateTask(task.id, { completed: !task.completed });
   }
 
-  editTask(task: Task): void {
-    this.editingTask = { ...task };
-    this.showAddTask = false;
+  getFilteredCount(filter: 'open' | 'closed' | 'archived'): number {
+    return this.taskCounts[filter];
   }
 
-  cancelEdit(): void {
-    this.editingTask = null;
-    this.showAddTask = false;
-  }
-
-  deleteTask(id: string): void {
-    if (confirm('Are you sure you want to delete this task?')) {
-      this.taskService.deleteTask(id);
+  getDate(date: Date | Timestamp | undefined): Date | undefined {
+    if (!date) return undefined;
+    if (date instanceof Timestamp) {
+      return date.toDate();
     }
+    return date;
   }
 
-  async onDrop(event: CdkDragDrop<Task[]>): Promise<void> {
-    if (event.previousIndex === event.currentIndex) return;
-
-    const tasks = await firstValueFrom(this.taskService.tasks$.pipe(take(1)));
-    if (!tasks) return;
-
-    moveItemInArray(tasks, event.previousIndex, event.currentIndex);
-    const taskIds = tasks.map(task => task.id);
-    await this.taskService.reorderTasks(taskIds);
+  editTask(task: Task): void {
+    this.editingTask = task;
+    this.showAddTask = true;
   }
 }

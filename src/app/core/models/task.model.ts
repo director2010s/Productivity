@@ -1,11 +1,14 @@
+import { Timestamp } from 'firebase/firestore';
+
 export interface Task {
   id: string;
   title: string;
   description?: string;
-  dueDate?: Date;
-  priority: 'low' | 'medium' | 'high';
   completed: boolean;
+  archived: boolean;
+  dueDate?: Date | Timestamp;
+  priority: 'low' | 'medium' | 'high';
   tags?: string[];
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: Date | Timestamp;
+  updatedAt: Date | Timestamp;
 }

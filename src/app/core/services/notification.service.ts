@@ -73,28 +73,31 @@ export class NotificationService {
 
     this.taskService.getUpcomingTasks().subscribe(tasks => {
       tasks.forEach(task => {
-        if (task.dueDate && this.shouldNotify(task.dueDate)) {
-          this.addNotification({
-            type: 'task',
-            title: 'Task Due Soon',
-            message: `Task "${task.title}" is due in ${preferences.reminderTiming} minutes`,
-            priority: 'high',
-            resourceId: task.id,
-            resourceType: 'task',
-            scheduledFor: new Date(task.dueDate),
-            actions: [
-              {
-                label: 'View Task',
-                action: 'view',
-                data: { taskId: task.id }
-              },
-              {
-                label: 'Mark Complete',
-                action: 'complete',
-                data: { taskId: task.id }
-              }
-            ]
-          });
+        if (task.dueDate) {
+          const dueDate = task.dueDate instanceof Date ? task.dueDate : task.dueDate.toDate();
+          if (this.shouldNotify(dueDate)) {
+            this.addNotification({
+              type: 'task',
+              title: 'Task Due Soon',
+              message: `Task "${task.title}" is due in ${preferences.reminderTiming} minutes`,
+              priority: 'high',
+              resourceId: task.id,
+              resourceType: 'task',
+              scheduledFor: new Date(dueDate),
+              actions: [
+                {
+                  label: 'View Task',
+                  action: 'view',
+                  data: { taskId: task.id }
+                },
+                {
+                  label: 'Mark Complete',
+                  action: 'complete',
+                  data: { taskId: task.id }
+                }
+              ]
+            });
+          }
         }
       });
     });

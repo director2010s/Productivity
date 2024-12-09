@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable, map, from, switchMap } from 'rxjs';
 import { Task } from '../models/task.model';
 import { FirebaseService } from './firebase.service';
+import { Timestamp } from 'firebase/firestore';
 
 @Injectable({
   providedIn: 'root'
@@ -38,11 +39,17 @@ export class TaskService {
 
   async addTask(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<void> {
     try {
+      console.log("addTask.dueDate:",task.dueDate)
+      const dueDate = task.dueDate instanceof Date ? task.dueDate : task.dueDate instanceof Timestamp ? task.dueDate?.toDate() : task.dueDate?new Date(task.dueDate): new Date();
+      console.log("addTask.dueDateDone:",dueDate)
+      const timestamp = task.dueDate ? Timestamp.fromDate(dueDate?dueDate:new Date()) : Timestamp.fromDate(new Date()); // Ensure timestamp is never null
       const newTask = {
         ...task,
+        dueDate: timestamp,
         id: crypto.randomUUID(),
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
+        tags: task.tags || [] // Ensure tags are not undefined
       };
       await this.firebaseService.addDocument<Task>(this.COLLECTION_NAME, newTask);
       await this.loadTasks();
@@ -70,16 +77,20 @@ export class TaskService {
     }
   }
 
-  getTasksByFilter(filter: 'all' | 'active' | 'completed'): Observable<Task[]> {
+  getTasksByFilter(filter: 'all' | 'open' | 'closed' | 'archived'): Observable<Task[]> {
     return this.tasks$.pipe(
       map(tasks => {
+        if (!tasks) return [];
+        
         switch (filter) {
-          case 'active':
-            return tasks.filter(task => !task.completed);
-          case 'completed':
-            return tasks.filter(task => task.completed);
+          case 'open':
+            return tasks.filter(task => !task.completed && !task.archived);
+          case 'closed':
+            return tasks.filter(task => task.completed && !task.archived);
+          case 'archived':
+            return tasks.filter(task => task.archived);
           default:
-            return tasks;
+            return tasks.filter(task => !task.archived);
         }
       })
     );
@@ -93,7 +104,11 @@ export class TaskService {
     return this.tasks$.pipe(
       map(tasks => tasks.filter(task => {
         if (!task.dueDate || task.completed) return false;
-        const dueDate = task.dueDate instanceof Date ? task.dueDate : new Date(task.dueDate);
+        const dueDate = task.dueDate instanceof Date 
+          ? task.dueDate 
+          : task.dueDate instanceof Timestamp 
+            ? task.dueDate.toDate() 
+            : new Date(task.dueDate);
         return !isNaN(dueDate.getTime()) && dueDate >= now && dueDate <= tomorrow;
       }))
     );
